@@ -205,8 +205,7 @@ static void PerformInitializationTasks(const blink::Settings& settings) {
   });
 }
 
-
-  std::unique_ptr<Shell> Shell::Create(
+std::unique_ptr<Shell> Shell::Create(
     blink::TaskRunners task_runners,
     blink::Settings settings,
     Shell::CreateCallback<PlatformView> on_create_platform_view,
@@ -400,7 +399,7 @@ fml::WeakPtr<PlatformView> Shell::GetPlatformView() {
   return platform_view_->GetWeakPtr();
 }
 
-const blink::DartVM& Shell::GetDartVM() const {
+blink::DartVM& Shell::GetDartVM() const {
   return *vm_;
 }
 
@@ -574,6 +573,21 @@ void Shell::OnPlatformViewSetSemanticsEnabled(const PlatformView& view,
       });
 }
 
+void Shell::OnPlatformViewSetAssistiveTechnologyEnabled(
+    const PlatformView& view,
+    bool enabled) {
+  FXL_DCHECK(is_setup_);
+  FXL_DCHECK(&view == platform_view_.get());
+  FXL_DCHECK(task_runners_.GetPlatformTaskRunner()->RunsTasksOnCurrentThread());
+
+  task_runners_.GetUITaskRunner()->PostTask(
+      [engine = engine_->GetWeakPtr(), enabled] {
+        if (engine) {
+          engine->SetAssistiveTechnologyEnabled(enabled);
+        }
+      });
+}
+
 // |shell::PlatformView::Delegate|
 void Shell::OnPlatformViewRegisterTexture(
     const PlatformView& view,
@@ -706,15 +720,18 @@ void Shell::OnAnimatorDrawLastLayerTree(const Animator& animator) {
 }
 
 // |shell::Engine::Delegate|
-void Shell::OnEngineUpdateSemantics(const Engine& engine,
-                                    blink::SemanticsNodeUpdates update) {
+void Shell::OnEngineUpdateSemantics(
+    const Engine& engine,
+    blink::SemanticsNodeUpdates update,
+    blink::CustomAccessibilityActionUpdates actions) {
   FXL_DCHECK(is_setup_);
   FXL_DCHECK(task_runners_.GetUITaskRunner()->RunsTasksOnCurrentThread());
 
   task_runners_.GetPlatformTaskRunner()->PostTask(
-      [view = platform_view_->GetWeakPtr(), update = std::move(update)] {
+      [view = platform_view_->GetWeakPtr(), update = std::move(update),
+       actions = std::move(actions)] {
         if (view) {
-          view->UpdateSemantics(std::move(update));
+          view->UpdateSemantics(std::move(update), std::move(actions));
         }
       });
 }

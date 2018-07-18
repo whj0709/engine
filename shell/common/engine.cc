@@ -36,7 +36,7 @@ static constexpr char kLocalizationChannel[] = "flutter/localization";
 static constexpr char kSettingsChannel[] = "flutter/settings";
 
 Engine::Engine(Delegate& delegate,
-               const blink::DartVM& vm,
+               blink::DartVM& vm,
                fxl::RefPtr<blink::DartSnapshot> isolate_snapshot,
                fxl::RefPtr<blink::DartSnapshot> shared_snapshot,
                blink::TaskRunners task_runners,
@@ -87,9 +87,9 @@ bool Engine::UpdateAssetManager(
 
   // Using libTXT as the text engine.
   if (settings_.use_test_fonts) {
-    blink::FontCollection::ForProcess().RegisterTestFonts();
+    font_collection_.RegisterTestFonts();
   } else {
-    blink::FontCollection::ForProcess().RegisterFonts(*asset_manager_.get());
+    font_collection_.RegisterFonts(asset_manager_);
   }
 
   return true;
@@ -152,9 +152,17 @@ bool Engine::PrepareAndLaunchIsolate(RunConfiguration configuration) {
     return false;
   }
 
-  if (!isolate->Run(configuration.GetEntrypoint())) {
-    FXL_LOG(ERROR) << "Could not run the isolate.";
-    return false;
+  if (configuration.GetEntrypointLibrary().empty()) {
+    if (!isolate->Run(configuration.GetEntrypoint())) {
+      FXL_LOG(ERROR) << "Could not run the isolate.";
+      return false;
+    }
+  } else {
+    if (!isolate->RunFromLibrary(configuration.GetEntrypointLibrary(),
+                                 configuration.GetEntrypoint())) {
+      FXL_LOG(ERROR) << "Could not run the isolate.";
+      return false;
+    }
   }
 
   return true;
@@ -331,6 +339,10 @@ void Engine::SetSemanticsEnabled(bool enabled) {
   runtime_controller_->SetSemanticsEnabled(enabled);
 }
 
+void Engine::SetAssistiveTechnologyEnabled(bool enabled) {
+  runtime_controller_->SetAssistiveTechnologyEnabled(enabled);
+}
+
 void Engine::StopAnimator() {
   animator_->Stop();
 }
@@ -364,8 +376,10 @@ void Engine::Render(std::unique_ptr<flow::LayerTree> layer_tree) {
   animator_->Render(std::move(layer_tree));
 }
 
-void Engine::UpdateSemantics(blink::SemanticsNodeUpdates update) {
-  delegate_.OnEngineUpdateSemantics(*this, std::move(update));
+void Engine::UpdateSemantics(blink::SemanticsNodeUpdates update,
+                             blink::CustomAccessibilityActionUpdates actions) {
+  delegate_.OnEngineUpdateSemantics(*this, std::move(update),
+                                    std::move(actions));
 }
 
 void Engine::HandlePlatformMessage(
@@ -375,6 +389,10 @@ void Engine::HandlePlatformMessage(
   } else {
     delegate_.OnEngineHandlePlatformMessage(*this, std::move(message));
   }
+}
+
+blink::FontCollection& Engine::GetFontCollection() {
+  return font_collection_;
 }
 
 void Engine::HandleAssetPlatformMessage(
@@ -387,12 +405,16 @@ void Engine::HandleAssetPlatformMessage(
   std::string asset_name(reinterpret_cast<const char*>(data.data()),
                          data.size());
 
-  std::vector<uint8_t> asset_data;
-  if (asset_manager_ && asset_manager_->GetAsBuffer(asset_name, &asset_data)) {
-    response->Complete(std::move(asset_data));
-  } else {
-    response->CompleteEmpty();
+  if (asset_manager_) {
+    std::unique_ptr<fml::Mapping> asset_mapping =
+        asset_manager_->GetAsMapping(asset_name);
+    if (asset_mapping) {
+      response->Complete(std::move(asset_mapping));
+      return;
+    }
   }
+
+  response->CompleteEmpty();
 }
 
 }  // namespace shell

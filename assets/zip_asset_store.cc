@@ -18,6 +18,10 @@
 
 namespace blink {
 
+void UniqueUnzipperTraits::Free(void* file) {
+  unzClose(file);
+}
+
 ZipAssetStore::ZipAssetStore(std::string file_path)
     : file_path_(std::move(file_path)) {
   BuildStatCache();
@@ -25,8 +29,8 @@ ZipAssetStore::ZipAssetStore(std::string file_path)
 
 ZipAssetStore::~ZipAssetStore() = default;
 
-zip::UniqueUnzipper ZipAssetStore::CreateUnzipper() const {
-  return zip::UniqueUnzipper{::unzOpen2(file_path_.c_str(), nullptr)};
+UniqueUnzipper ZipAssetStore::CreateUnzipper() const {
+  return UniqueUnzipper{::unzOpen2(file_path_.c_str(), nullptr)};
 }
 
 // |blink::AssetResolver|
@@ -35,19 +39,19 @@ bool ZipAssetStore::IsValid() const {
 }
 
 // |blink::AssetResolver|
-bool ZipAssetStore::GetAsBuffer(const std::string& asset_name,
-                                std::vector<uint8_t>* data) const {
-  TRACE_EVENT0("flutter", "ZipAssetStore::GetAsBuffer");
+std::unique_ptr<fml::Mapping> ZipAssetStore::GetAsMapping(
+    const std::string& asset_name) const {
+  TRACE_EVENT0("flutter", "ZipAssetStore::GetAsMapping");
   auto found = stat_cache_.find(asset_name);
 
   if (found == stat_cache_.end()) {
-    return false;
+    return nullptr;
   }
 
   auto unzipper = CreateUnzipper();
 
   if (!unzipper.is_valid()) {
-    return false;
+    return nullptr;
   }
 
   int result = UNZ_OK;
@@ -55,27 +59,27 @@ bool ZipAssetStore::GetAsBuffer(const std::string& asset_name,
   result = unzGoToFilePos(unzipper.get(), &(found->second.file_pos));
   if (result != UNZ_OK) {
     FXL_LOG(WARNING) << "unzGetCurrentFileInfo failed, error=" << result;
-    return false;
+    return nullptr;
   }
 
   result = unzOpenCurrentFile(unzipper.get());
   if (result != UNZ_OK) {
     FXL_LOG(WARNING) << "unzOpenCurrentFile failed, error=" << result;
-    return false;
+    return nullptr;
   }
 
-  data->resize(found->second.uncompressed_size);
+  std::vector<uint8_t> data(found->second.uncompressed_size);
   int total_read = 0;
-  while (total_read < static_cast<int>(data->size())) {
+  while (total_read < static_cast<int>(data.size())) {
     int bytes_read = unzReadCurrentFile(
-        unzipper.get(), data->data() + total_read, data->size() - total_read);
+        unzipper.get(), data.data() + total_read, data.size() - total_read);
     if (bytes_read <= 0) {
-      return false;
+      return nullptr;
     }
     total_read += bytes_read;
   }
 
-  return true;
+  return std::make_unique<fml::DataMapping>(std::move(data));
 }
 
 void ZipAssetStore::BuildStatCache() {

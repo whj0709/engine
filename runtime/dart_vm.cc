@@ -95,8 +95,7 @@ static const char* kDartStrongModeArgs[] = {
     // clang-format off
     "--strong",
     "--reify_generic_functions",
-    // TODO(bkonyi): uncomment when sync-async is enabled in flutter/flutter.
-    // "--sync_async",
+    "--sync_async",
     // clang-format on
 };
 
@@ -469,6 +468,10 @@ const fml::Mapping& DartVM::GetPlatformKernel() const {
 
 const DartSnapshot& DartVM::GetVMSnapshot() const {
   return *vm_snapshot_.get();
+}
+
+IsolateNameServer* DartVM::GetIsolateNameServer() {
+  return &isolate_name_server_;
 }
 
 fxl::RefPtr<DartSnapshot> DartVM::GetIsolateSnapshot() const {

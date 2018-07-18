@@ -42,6 +42,11 @@ blink::SemanticsAction GetSemanticsActionForScrollDirection(
 
 }  // namespace
 
+@implementation FlutterCustomAccessibilityAction
+ {
+}
+@end
+
 /**
  * Represents a semantics object that has children and hence has to be presented to the OS as a
  * UIAccessibilityContainer.
@@ -159,7 +164,8 @@ blink::SemanticsAction GetSemanticsActionForScrollDirection(
   //  We enforce in the framework that no other useful semantics are merged with these nodes.
   if ([self node].HasFlag(blink::SemanticsFlags::kScopesRoute))
     return false;
-  return ([self node].flags != 0 && [self node].flags != static_cast<int32_t>(blink::SemanticsFlags::kIsHidden)) ||
+  return ([self node].flags != 0 &&
+          [self node].flags != static_cast<int32_t>(blink::SemanticsFlags::kIsHidden)) ||
          ![self node].label.empty() || ![self node].value.empty() || ![self node].hint.empty() ||
          ([self node].actions & ~blink::kScrollableSemanticsActions) != 0;
 }
@@ -172,6 +178,20 @@ blink::SemanticsAction GetSemanticsActionForScrollDirection(
       [child collectRoutes:edges];
     }
   }
+}
+
+- (BOOL)onCustomAccessibilityAction:(FlutterCustomAccessibilityAction*)action {
+  if (![self node].HasAction(blink::SemanticsAction::kCustomAction))
+    return NO;
+  int32_t action_id = action.uid;
+  std::vector<uint8_t> args;
+  args.push_back(3); // type=int32.
+  args.push_back(action_id);
+  args.push_back(action_id >> 8);
+  args.push_back(action_id >> 16);
+  args.push_back(action_id >> 24);
+  [self bridge] ->DispatchSemanticsAction([self uid], blink::SemanticsAction::kCustomAction, args);
+  return YES;
 }
 
 - (NSString*)routeName {
@@ -219,7 +239,7 @@ blink::SemanticsAction GetSemanticsActionForScrollDirection(
   return [self globalRect];
 }
 
-- (CGRect) globalRect {
+- (CGRect)globalRect {
   SkMatrix44 globalTransform = [self node].transform;
   for (SemanticsObject* parent = [self parent]; parent; parent = parent.parent) {
     globalTransform = parent.node.transform * globalTransform;
@@ -480,10 +500,14 @@ UIView<UITextInput>* AccessibilityBridge::textInputView() {
   return [platform_view_->GetTextInputPlugin() textInputView];
 }
 
-void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes) {
+void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes,
+                                          blink::CustomAccessibilityActionUpdates actions) {
   BOOL layoutChanged = NO;
   BOOL scrollOccured = NO;
-
+  for (const auto& entry: actions) {
+    const blink::CustomAccessibilityAction& action = entry.second;
+    actions_[action.id] = action;
+  }
   for (const auto& entry : nodes) {
     const blink::SemanticsNode& node = entry.second;
     SemanticsObject* object = GetOrCreateObject(node.id, nodes);
@@ -499,6 +523,20 @@ void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes) {
       [newChildren addObject:child];
     }
     object.children = newChildren;
+    if (node.customAccessibilityActions.size() > 0) {
+      NSMutableArray<FlutterCustomAccessibilityAction*>* accessibilityCustomActions = 
+          [[[NSMutableArray alloc] init] autorelease];
+      for (int32_t action_id : node.customAccessibilityActions) {
+        blink::CustomAccessibilityAction& action = actions_[action_id];
+        NSString* label = @(action.label.data());
+        SEL selector = @selector(onCustomAccessibilityAction:);
+        FlutterCustomAccessibilityAction* customAction = 
+          [[FlutterCustomAccessibilityAction alloc] initWithName:label target:object selector:selector];
+        customAction.uid = action_id;
+        [accessibilityCustomActions addObject:customAction];
+      }
+      object.accessibilityCustomActions = accessibilityCustomActions;
+    }
   }
 
   SemanticsObject* root = objects_.get()[@(kRootNodeId)];
@@ -513,7 +551,8 @@ void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes) {
     NSMutableArray<SemanticsObject*>* newRoutes = [[[NSMutableArray alloc] init] autorelease];
     [root collectRoutes:newRoutes];
     for (SemanticsObject* route in newRoutes) {
-      if (std::find(previous_routes_.begin(), previous_routes_.end(), [route uid]) != previous_routes_.end()) {
+      if (std::find(previous_routes_.begin(), previous_routes_.end(), [route uid]) !=
+          previous_routes_.end()) {
         lastAdded = route;
       }
     }
@@ -522,8 +561,8 @@ void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes) {
       lastAdded = [newRoutes objectAtIndex:index];
     }
     if (lastAdded != nil && [lastAdded uid] != previous_route_id_) {
-        previous_route_id_ = [lastAdded uid];
-        routeChanged = true;
+      previous_route_id_ = [lastAdded uid];
+      routeChanged = true;
     }
     previous_routes_.clear();
     for (SemanticsObject* route in newRoutes) {
@@ -556,6 +595,12 @@ void AccessibilityBridge::UpdateSemantics(blink::SemanticsNodeUpdates nodes) {
 void AccessibilityBridge::DispatchSemanticsAction(int32_t uid, blink::SemanticsAction action) {
   std::vector<uint8_t> args;
   platform_view_->DispatchSemanticsAction(uid, action, args);
+}
+
+void AccessibilityBridge::DispatchSemanticsAction(int32_t uid, 
+                                                   blink::SemanticsAction action,
+                                                  std::vector<uint8_t> args) {
+  platform_view_->DispatchSemanticsAction(uid, action, args);                                              
 }
 
 SemanticsObject* AccessibilityBridge::GetOrCreateObject(int32_t uid,

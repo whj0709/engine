@@ -36,6 +36,7 @@
 
 #include "FlutterAppDelegate.h"
 #include "FlutterBinaryMessenger.h"
+#include "FlutterCallbackCache.h"
 #include "FlutterChannels.h"
 #include "FlutterCodecs.h"
 #include "FlutterDartProject.h"
@@ -43,6 +44,7 @@
 #include "FlutterMacros.h"
 #include "FlutterNavigationController.h"
 #include "FlutterPlugin.h"
+#include "FlutterPluginAppLifeCycleDelegate.h"
 #include "FlutterTexture.h"
 #include "FlutterViewController.h"
 

@@ -20,7 +20,7 @@ namespace blink {
 
 RuntimeController::RuntimeController(
     RuntimeDelegate& p_client,
-    const DartVM* p_vm,
+    DartVM* p_vm,
     fxl::RefPtr<DartSnapshot> p_isolate_snapshot,
     fxl::RefPtr<DartSnapshot> p_shared_snapshot,
     TaskRunners p_task_runners,
@@ -41,7 +41,7 @@ RuntimeController::RuntimeController(
 
 RuntimeController::RuntimeController(
     RuntimeDelegate& p_client,
-    const DartVM* p_vm,
+    DartVM* p_vm,
     fxl::RefPtr<DartSnapshot> p_isolate_snapshot,
     fxl::RefPtr<DartSnapshot> p_shared_snapshot,
     TaskRunners p_task_runners,
@@ -122,7 +122,9 @@ std::unique_ptr<RuntimeController> RuntimeController::Clone() const {
 bool RuntimeController::FlushRuntimeStateToIsolate() {
   return SetViewportMetrics(window_data_.viewport_metrics) &&
          SetLocale(window_data_.language_code, window_data_.country_code) &&
-         SetSemanticsEnabled(window_data_.semantics_enabled);
+         SetSemanticsEnabled(window_data_.semantics_enabled) &&
+         SetAssistiveTechnologyEnabled(
+             window_data_.assistive_technology_enabled);
 }
 
 bool RuntimeController::SetViewportMetrics(const ViewportMetrics& metrics) {
@@ -164,6 +166,17 @@ bool RuntimeController::SetSemanticsEnabled(bool enabled) {
 
   if (auto window = GetWindowIfAvailable()) {
     window->UpdateSemanticsEnabled(window_data_.semantics_enabled);
+    return true;
+  }
+
+  return false;
+}
+
+bool RuntimeController::SetAssistiveTechnologyEnabled(bool enabled) {
+  window_data_.assistive_technology_enabled = enabled;
+  if (auto window = GetWindowIfAvailable()) {
+    window->UpdateAssistiveTechnologyEnabled(
+        window_data_.assistive_technology_enabled);
     return true;
   }
 
@@ -240,13 +253,17 @@ void RuntimeController::Render(Scene* scene) {
 
 void RuntimeController::UpdateSemantics(SemanticsUpdate* update) {
   if (window_data_.semantics_enabled) {
-    client_.UpdateSemantics(update->takeNodes());
+    client_.UpdateSemantics(update->takeNodes(), update->takeActions());
   }
 }
 
 void RuntimeController::HandlePlatformMessage(
     fxl::RefPtr<PlatformMessage> message) {
   client_.HandlePlatformMessage(std::move(message));
+}
+
+FontCollection& RuntimeController::GetFontCollection() {
+  return client_.GetFontCollection();
 }
 
 Dart_Port RuntimeController::GetMainPort() {
@@ -266,8 +283,7 @@ bool RuntimeController::HasLivePorts() {
 }
 
 tonic::DartErrorHandleType RuntimeController::GetLastError() {
-  return root_isolate_ ? root_isolate_->message_handler().isolate_last_error()
-                       : tonic::kNoError;
+  return root_isolate_ ? root_isolate_->GetLastError() : tonic::kNoError;
 }
 
 fml::WeakPtr<DartIsolate> RuntimeController::GetRootIsolate() {

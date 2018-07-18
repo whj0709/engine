@@ -14,6 +14,7 @@
 #include "flutter/fml/memory/thread_checker.h"
 #include "flutter/fml/memory/weak_ptr.h"
 #include "flutter/fml/thread.h"
+#include "flutter/lib/ui/semantics/custom_accessibility_action.h"
 #include "flutter/lib/ui/semantics/semantics_node.h"
 #include "flutter/lib/ui/window/platform_message.h"
 #include "flutter/runtime/service_protocol.h"
@@ -72,7 +73,7 @@ class Shell final : public PlatformView::Delegate,
 
   fml::WeakPtr<PlatformView> GetPlatformView();
 
-  const blink::DartVM& GetDartVM() const;
+  blink::DartVM& GetDartVM() const;
 
   bool IsSetup() const;
 
@@ -149,6 +150,10 @@ class Shell final : public PlatformView::Delegate,
                                          bool enabled) override;
 
   // |shell::PlatformView::Delegate|
+  void OnPlatformViewSetAssistiveTechnologyEnabled(const PlatformView& view,
+                                                   bool enabled) override;
+
+  // |shell::PlatformView::Delegate|
   void OnPlatformViewRegisterTexture(
       const PlatformView& view,
       std::shared_ptr<flow::Texture> texture) override;
@@ -182,8 +187,10 @@ class Shell final : public PlatformView::Delegate,
   void OnAnimatorDrawLastLayerTree(const Animator& animator) override;
 
   // |shell::Engine::Delegate|
-  void OnEngineUpdateSemantics(const Engine& engine,
-                               blink::SemanticsNodeUpdates update) override;
+  void OnEngineUpdateSemantics(
+      const Engine& engine,
+      blink::SemanticsNodeUpdates update,
+      blink::CustomAccessibilityActionUpdates actions) override;
 
   // |shell::Engine::Delegate|
   void OnEngineHandlePlatformMessage(

@@ -20,6 +20,7 @@ class DartLibraryNatives;
 }  // namespace tonic
 
 namespace blink {
+class FontCollection;
 class Scene;
 
 Dart_Handle ToByteData(const std::vector<uint8_t>& buffer);
@@ -31,6 +32,7 @@ class WindowClient {
   virtual void Render(Scene* scene) = 0;
   virtual void UpdateSemantics(SemanticsUpdate* update) = 0;
   virtual void HandlePlatformMessage(fxl::RefPtr<PlatformMessage> message) = 0;
+  virtual FontCollection& GetFontCollection() = 0;
 
  protected:
   virtual ~WindowClient();
@@ -52,6 +54,7 @@ class Window final {
                     const std::string& country_code);
   void UpdateUserSettingsData(const std::string& data);
   void UpdateSemanticsEnabled(bool enabled);
+  void UpdateAssistiveTechnologyEnabled(bool enabled);
   void DispatchPlatformMessage(fxl::RefPtr<PlatformMessage> message);
   void DispatchPointerDataPacket(const PointerDataPacket& packet);
   void DispatchSemanticsAction(int32_t id,
